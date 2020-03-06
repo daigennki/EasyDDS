@@ -1,0 +1,22 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "preLaunchTask": "Build (Debug)",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "MIMode": "gdb",
+            "program": "${workspaceFolder}/easydds",
+            "args": [ "irasutoya_shibainu.png" ],
+            "windows": {
+                "miDebuggerPath": "C:/msys64/mingw64/bin/gdb.exe"
+            },
+            "linux": {
+                "miDebuggerPath": "/usr/bin/gdb"
+            }
+        }
+    ]
+}
