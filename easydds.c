@@ -228,15 +228,15 @@ int main(int argc, char** argv)
     }
 
     /* generate output file name */
-    char outFilePath[256];
-    strncpy(outFilePath, inFilePath, 255);
+    char outFilePath[1024];
+    strncpy(outFilePath, inFilePath, 1023);
     char* periodPos = strrchr(outFilePath, '.');
     if (!periodPos)
     {
         printf("Error: Invalid file name (no period)\n");
         return 2;
     }
-    if (periodPos - outFilePath > 252)
+    if (periodPos - outFilePath > 1020)
     {
         printf("Error: File path too long\n");
         return 3;
