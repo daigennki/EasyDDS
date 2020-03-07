@@ -18,14 +18,14 @@
 
 enum DDSFlags
 {
-	DDSD_CAPS = 0x00000001, 		// dwCaps/dwCaps2 is enabled.
-	DDSD_HEIGHT = 0x00000002, 		// dwHeight is enabled.
-	DDSD_WIDTH = 0x00000004, 		// dwWidth is enabled. Required for all textures.
-	DDSD_PITCH = 0x00000008, 		// dwPitchOrLinearSize represents pitch.
-	DDSD_PIXELFORMAT = 0x00001000, 	// dwPfSize/dwPfFlags/dwRGB/dwFourCC and such are enabled.
-	DDSD_MIPMAPCOUNT = 0x00020000, 	// dwMipMapCount is enabled. Required for storing mipmaps.
-	DDSD_LINEARSIZE = 0x00080000, 	// dwPitchOrLinearSize represents LinearSize.
-	DDSD_DEPTH = 0x00800000 		// dwDepth is enabled. Used for 3D (Volume) Texture.
+	DDSD_CAPS = 0x00000001, 		/* dwCaps/dwCaps2 is enabled. */
+	DDSD_HEIGHT = 0x00000002, 		/* dwHeight is enabled. */
+	DDSD_WIDTH = 0x00000004, 		/* dwWidth is enabled. Required for all textures. */
+	DDSD_PITCH = 0x00000008, 		/* dwPitchOrLinearSize represents pitch. */
+	DDSD_PIXELFORMAT = 0x00001000, 	/* dwPfSize/dwPfFlags/dwRGB/dwFourCC and such are enabled. */
+	DDSD_MIPMAPCOUNT = 0x00020000, 	/* dwMipMapCount is enabled. Required for storing mipmaps. */
+	DDSD_LINEARSIZE = 0x00080000, 	/* dwPitchOrLinearSize represents LinearSize. */
+	DDSD_DEPTH = 0x00800000 		/* dwDepth is enabled. Used for 3D (Volume) Texture. */
 };
 
 static void printHelp()
@@ -50,8 +50,8 @@ static void writeHeader(FILE* outputFile, int w, int h, int channels, int mipCou
     printf("Writing header...\n");
     /* write header */
     struct {
-        char magic[4];	// always "DDS "
-        uint32_t size;	// header size without magic number (==124)
+        char magic[4];	/* always "DDS " */
+        uint32_t size;	/* header size without magic number (==124) */
         uint32_t flags;
         uint32_t height;
         uint32_t width;
@@ -84,13 +84,13 @@ static void writeHeader(FILE* outputFile, int w, int h, int channels, int mipCou
     header.mipMapCount = mipCount;
     memcpy(header.reserved1, "EasyDDS", 8);
     header.pfSize = 32;
-    header.pfFlags = 0x4;    // DDPF_FOURCC
+    header.pfFlags = 0x4;    /* DDPF_FOURCC */
 
     /* Determine output FourCC from output channels */
     const char* fourccs[] = { "ATI1", "ATI2", "DXT1", "DXT5" };
     memcpy(header.fourCC, fourccs[channels - 1], 4);
 
-    header.caps = 0x1000;   // DDSCAPS_TEXTURE
+    header.caps = 0x1000;   /* DDSCAPS_TEXTURE */
     if (mipCount > 1) header.caps |= 0x400000;
     
     fwrite(&header, sizeof(header), 1, outputFile);
@@ -105,7 +105,7 @@ static void writeData(FILE* outputFile, const int w, const int h, const int chan
     printf("Writing data...\n");
     const int blockSize = (channels == 2 || channels == 4 ? 16 : 8);
     printf("Block size: %i\n", blockSize);
-    const int pixBufStride = (channels == 3 ? 4 : channels);    // stb_compress_dxt_block expects RGBA even for no alpha
+    const int pixBufStride = (channels == 3 ? 4 : channels);    /* stb_compress_dxt_block expects RGBA even for no alpha */
     int mw = w, mh = h;
     for (unsigned int m = 0; m < mipCount; ++m, mw /= 2, mh /= 2)
     {
@@ -146,7 +146,6 @@ static unsigned char* genMips(const int w, const int h, const int allowGenMips, 
     int mipSize = w * h * 4;
     int totalMipSize = mipSize;
     int mw = w / 2, mh = h / 2;
-    unsigned char* mipData;
     if (allowGenMips)
     {
         /* Determine number of possible mipmaps */
@@ -161,7 +160,7 @@ static unsigned char* genMips(const int w, const int h, const int allowGenMips, 
 
     /* Allocate memory for mipmaps */
     printf("Allocating output (%i bytes)...\n", totalMipSize);
-    mipData = malloc(totalMipSize);
+    unsigned char* mipData = malloc(totalMipSize);
 
     /* Copy original data for first mipmap */
     memcpy(mipData, firstMip, mipSize);
@@ -215,8 +214,8 @@ int main(int argc, char** argv)
             else if (!strcmp(argv[i], "-nomip")) allowGenMips = 0;
             else 
             {
-                printf("Error: Unknown parameter '%s'\n", argv[i]);
-                return 1;
+                printf("Error: Unknown argument '%s'\n", argv[i]);
+                return EINVAL;
             }
         }
         else if (!inFilePath) inFilePath = argv[i];
@@ -228,53 +227,56 @@ int main(int argc, char** argv)
     }
 
     /* generate output file name */
-    char outFilePath[1024];
-    strncpy(outFilePath, inFilePath, 1023);
-    char* periodPos = strrchr(outFilePath, '.');
-    if (!periodPos)
-    {
-        printf("Error: Invalid file name (no period)\n");
-        return 2;
-    }
-    if (periodPos - outFilePath > 1020)
-    {
-        printf("Error: File path too long\n");
-        return 3;
-    }
-    strcpy(periodPos, ".dds");
+    const char* periodPos = strrchr(inFilePath, '.');   /* get position of last period in string */
+    if (!periodPos) periodPos = inFilePath + strlen(inFilePath);    /* point to end in case of no period, though it would be an unusual scenario */
+    int periodOffset = periodPos - inFilePath;
+    char* outFilePath = malloc(periodOffset + 5);
+    memcpy(outFilePath, inFilePath, periodOffset);
+    memcpy(outFilePath + periodOffset, ".dds", 5);
 
     /* load file and its parameters; only set channels parameter if it was not specified in the options */
     printf("Loading file '%s'...\n", inFilePath);
     int w, h;
-	stbi_uc *loadedFile = stbi_load(inFilePath, &w, &h, (channels == 0 ? &channels : NULL), 4);
+    FILE* loadedFile = fopen(inFilePath, "r");
     if (!loadedFile)
     {
-        printf("Error: Failed to load input file '%s': %s\n", inFilePath, stbi_failure_reason());
-        return 4;
+        free(outFilePath);
+        printf("Error: Failed to open input file '%s': %s\n", inFilePath, strerror(errno));
+        return errno;
+    }
+	stbi_uc *loadedFileData = stbi_load_from_file(loadedFile, &w, &h, (channels == 0 ? &channels : NULL), 4);
+    fclose(loadedFile);
+    if (!loadedFileData)
+    {
+        printf("Error: Failed to load data from '%s': %s\n", inFilePath, stbi_failure_reason());
+        free(outFilePath);
+        return 1;
     }
     assert(channels >= 1 && channels <= 4);
     if (w % 4 != 0 || h % 4 != 0)
     {
         printf("Error: Input file '%s' has dimensions that are not a multiple of 4\n", inFilePath);
-        stbi_image_free(loadedFile);
-        return 5;
+        stbi_image_free(loadedFileData);
+        free(outFilePath);
+        return 4;
     }
 
     /* Generate mipmaps if requested */
     int mipCount;
-    unsigned char* mipData = genMips(w, h, allowGenMips, channels >= 3, loadedFile, &mipCount);
+    unsigned char* mipData = genMips(w, h, allowGenMips, channels >= 3, loadedFileData, &mipCount);
 
     /* Free original image here since we don't need it anymore */
-    stbi_image_free(loadedFile);
+    stbi_image_free(loadedFileData);
 
     /* open output file */
     printf("Opening output file...\n");
     FILE* outputFile = fopen(outFilePath, "wb");
+    free(outFilePath);
     if (!outputFile)
     {
         printf("Error: Failed to open output file: %s\n", strerror(errno));
         free(mipData);
-        return 6;
+        return 5;
     }
 
     /* write to output file */
