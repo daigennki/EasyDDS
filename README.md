@@ -19,3 +19,5 @@ If no options were specified, the application will automatically determine the o
 Additionally, on Windows, you can simply drag and drop the input image onto the executable if you want automatic conversion.<br>
 <br>
 Do note that only BC1 and BC3 are in the sRGB color space. BC4 and BC5 support exists with the assumption that they will not be used for color, such as metallic maps and normal maps. In fact, only color maps can use BC1 and BC3, otherwise the output may appear incorrect. This means you should force BC5 for normal maps.<br>
+<br>
+Also note that if you are having trouble opening the output files in some programs, make sure the dimensions are multiples of 4. This program does not throw errors if the dimensions are not multiples of 4, and instead fills in the remainder pixels with 0.

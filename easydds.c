@@ -110,7 +110,7 @@ static void writeData(FILE* outputFile, const int w, const int h, const int chan
     for (unsigned int m = 0; m < mipCount; ++m, mw /= 2, mh /= 2)
     {
         int maxRows;
-        for (int l = 0, y = 0; l < mh; l += 4, inRow += mw * 4 * 3, y += 4)    /* every 4 rows */
+        for (int y = 0; y < mh; y += 4, inRow += mw * 4 * 3)    /* every 4 rows */
         {
             /* calculate rows and columns left so we can copy for dimensions that aren't multiples of 4 */
             if (mh - y > 4) maxRows = 4;
@@ -120,7 +120,7 @@ static void writeData(FILE* outputFile, const int w, const int h, const int chan
                 maxRows = (rowsLeftMod == 0 ? 4 : rowsLeftMod);
             }
             int maxCols;
-            for (int j = 0, x = 0; j < mw; j += 4, inRow += maxCols * 4, x += 4)     /* every 4 columns */
+            for (int x = 0; x < mw; x += 4, inRow += maxCols * 4)     /* every 4 columns */
             {
                 if (mw - x > 4) maxCols = 4;
                 else
@@ -243,6 +243,17 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    /* load file and its parameters; only set channels parameter if it was not specified in the options */
+    printf("Loading file '%s'...\n", inFilePath);
+    int w, h;
+	stbi_uc *loadedFileData = stbi_load(inFilePath, &w, &h, (channels == 0 ? &channels : NULL), 4);
+    if (!loadedFileData)
+    {
+        printf("Error: Failed to load file '%s': %s\n", inFilePath, stbi_failure_reason());
+        return 1;
+    }
+    assert(channels >= 1 && channels <= 4);
+
     /* generate output file name */
     const char* periodPos = strrchr(inFilePath, '.');   /* get position of last period in string */
     if (!periodPos) periodPos = inFilePath + strlen(inFilePath);    /* point to end in case of no period, though it would be an unusual scenario */
@@ -251,25 +262,6 @@ int main(int argc, char** argv)
     memcpy(outFilePath, inFilePath, periodOffset);
     memcpy(outFilePath + periodOffset, ".dds", 5);
 
-    /* load file and its parameters; only set channels parameter if it was not specified in the options */
-    printf("Loading file '%s'...\n", inFilePath);
-    int w, h;
-	stbi_uc *loadedFileData = stbi_load(inFilePath, &w, &h, (channels == 0 ? &channels : NULL), 4);
-    if (!loadedFileData)
-    {
-        printf("Error: Failed to load file '%s': %s\n", inFilePath, stbi_failure_reason());
-        free(outFilePath);
-        return 1;
-    }
-    assert(channels >= 1 && channels <= 4);
-
-    /* Generate mipmaps if requested */
-    int mipCount;
-    unsigned char* mipData = genMips(w, h, allowGenMips, channels >= 3, loadedFileData, &mipCount);
-
-    /* Free original image here since we don't need it anymore */
-    stbi_image_free(loadedFileData);
-
     /* open output file */
     printf("Opening output file...\n");
     FILE* outputFile = fopen(outFilePath, "wb");
@@ -277,9 +269,14 @@ int main(int argc, char** argv)
     if (!outputFile)
     {
         printf("Error: Failed to open output file: %s\n", strerror(errno));
-        free(mipData);
+        stbi_image_free(loadedFileData);
         return errno;
     }
+
+    /* generate mipmaps */
+    int mipCount;
+    unsigned char* mipData = genMips(w, h, allowGenMips, channels >= 3, loadedFileData, &mipCount);
+    stbi_image_free(loadedFileData);    /* Free original image here since we don't need it anymore */
 
     /* write to output file */
     writeData(outputFile, w, h, channels, mipCount, mipData);
