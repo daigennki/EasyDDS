@@ -99,9 +99,9 @@ static void writeData(FILE* outputFile, const int w, const int h, const int chan
 {
     writeHeader(outputFile, w, h, channels, mipCount);
 
-    unsigned char inDataBuf[64];
-    memset(inDataBuf, 255, 64);
-    unsigned char outDataBuf[16];
+    unsigned char rgbaBuf[64];
+    memset(rgbaBuf, 0, 64);
+    unsigned char bcBuf[16];
     printf("Writing data...\n");
     const int blockSize = (channels == 2 || channels == 4 ? 16 : 8);
     printf("Block size: %i\n", blockSize);
@@ -109,39 +109,55 @@ static void writeData(FILE* outputFile, const int w, const int h, const int chan
     int mw = w, mh = h;
     for (unsigned int m = 0; m < mipCount; ++m, mw /= 2, mh /= 2)
     {
-        for (int l = 0; l < mh; l += 4, inRow += mw * 4 * 3)    /* every 4 rows */
+        int maxRows;
+        for (int l = 0, y = 0; l < mh; l += 4, inRow += mw * 4 * 3, y += 4)    /* every 4 rows */
         {
-            for (int j = 0; j < mw; j += 4, inRow += 4 * 4)     /* every 4 columns */
+            /* calculate rows and columns left so we can copy for dimensions that aren't multiples of 4 */
+            if (mh - y > 4) maxRows = 4;
+            else
             {
-                for (int i = 0; i < 4; ++i)     /* every row in the 4x4 RGBA pixel block */
+                int rowsLeftMod = (mh - y) % 4;
+                maxRows = (rowsLeftMod == 0 ? 4 : rowsLeftMod);
+            }
+            int maxCols;
+            for (int j = 0, x = 0; j < mw; j += 4, inRow += maxCols * 4, x += 4)     /* every 4 columns */
+            {
+                if (mw - x > 4) maxCols = 4;
+                else
                 {
-                    for (int k = 0; k < 4; ++k)
+                    int colsLeftMod = (mw - x) % 4;
+                    maxCols = (colsLeftMod == 0 ? 4 : colsLeftMod);
+                }
+
+                for (int i = 0; i < maxRows; ++i)     /* every row in the 4x4 RGBA pixel block */
+                {
+                    for (int k = 0; k < maxCols; ++k)
                     {
-                        memcpy(inDataBuf + (i * 4 + k) * pixBufStride, inRow + (i * mw + k) * 4, channels);
+                        memcpy(rgbaBuf + (i * 4 + k) * pixBufStride, inRow + (i * mw + k) * 4, channels);
                     }
                 }
                 switch (channels)
                 {
                 case 3:
                 case 4:
-                    stb_compress_dxt_block(outDataBuf, inDataBuf, (channels == 4 ? 1 : 0), STB_DXT_DITHER | STB_DXT_HIGHQUAL);
+                    stb_compress_dxt_block(bcBuf, rgbaBuf, (channels == 4 ? 1 : 0), STB_DXT_DITHER | STB_DXT_HIGHQUAL);
                     break;
                 case 1:
-                    stb_compress_bc4_block(outDataBuf, inDataBuf);
+                    stb_compress_bc4_block(bcBuf, rgbaBuf);
                     break;
                 case 2:
-                    stb_compress_bc5_block(outDataBuf, inDataBuf);
+                    stb_compress_bc5_block(bcBuf, rgbaBuf);
                     break;
                 }
-                fwrite(outDataBuf, blockSize, 1, outputFile);
+                fwrite(bcBuf, blockSize, 1, outputFile);
             }
         }
     }
 }
-static unsigned char* genMips(const int w, const int h, const int allowGenMips, const int srgb, const unsigned char* firstMip, int* const mipCountOut)
+static unsigned char* genMips(const int w, const int h, int allowGenMips, const int srgb, const unsigned char* firstMip, int* const mipCountOut)
 {
     assert(mipCountOut);
-    
+    if ((w % 2) || (h % 2)) allowGenMips = 0;    /* the original dimensions have odd width or height, so don't generate mipmaps */
     int mipCount = 1;
     int mipSize = w * h * 4;
     int totalMipSize = mipSize;
@@ -150,10 +166,11 @@ static unsigned char* genMips(const int w, const int h, const int allowGenMips, 
     {
         /* Determine number of possible mipmaps */
         mipSize /= 4;
-        for (; mw >= 4 && mh >= 4 && (mw % 4 == 0) && (mh % 4 == 0); mw /= 2, mh /= 2, mipSize /= 4) 
+        for (; mw >= 1 && mh >= 1; mw /= 2, mh /= 2, mipSize /= 4) 
         {
             ++mipCount;
             totalMipSize += mipSize;
+            if ((mw % 2) || (mh % 2)) break; /* don't generate any more mipmaps if dimensions for this mipmap are odd */
         }
         mipSize = w * h * 4;
     }
@@ -214,7 +231,7 @@ int main(int argc, char** argv)
             else if (!strcmp(argv[i], "-nomip")) allowGenMips = 0;
             else 
             {
-                printf("Error: Unknown argument '%s'\n", argv[i]);
+                printf("Error: '%s' is not a known argument\n", argv[i]);
                 return EINVAL;
             }
         }
@@ -237,29 +254,14 @@ int main(int argc, char** argv)
     /* load file and its parameters; only set channels parameter if it was not specified in the options */
     printf("Loading file '%s'...\n", inFilePath);
     int w, h;
-    FILE* loadedFile = fopen(inFilePath, "r");
-    if (!loadedFile)
-    {
-        free(outFilePath);
-        printf("Error: Failed to open input file '%s': %s\n", inFilePath, strerror(errno));
-        return errno;
-    }
-	stbi_uc *loadedFileData = stbi_load_from_file(loadedFile, &w, &h, (channels == 0 ? &channels : NULL), 4);
-    fclose(loadedFile);
+	stbi_uc *loadedFileData = stbi_load(inFilePath, &w, &h, (channels == 0 ? &channels : NULL), 4);
     if (!loadedFileData)
     {
-        printf("Error: Failed to load data from '%s': %s\n", inFilePath, stbi_failure_reason());
+        printf("Error: Failed to load file '%s': %s\n", inFilePath, stbi_failure_reason());
         free(outFilePath);
         return 1;
     }
     assert(channels >= 1 && channels <= 4);
-    if (w % 4 != 0 || h % 4 != 0)
-    {
-        printf("Error: Input file '%s' has dimensions that are not a multiple of 4\n", inFilePath);
-        stbi_image_free(loadedFileData);
-        free(outFilePath);
-        return 4;
-    }
 
     /* Generate mipmaps if requested */
     int mipCount;
@@ -276,7 +278,7 @@ int main(int argc, char** argv)
     {
         printf("Error: Failed to open output file: %s\n", strerror(errno));
         free(mipData);
-        return 5;
+        return errno;
     }
 
     /* write to output file */
